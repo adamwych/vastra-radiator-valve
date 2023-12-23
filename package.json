@@ -1,9 +1,26 @@
 {
   "name": "vastra-radiator-valve",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
   "license": "MIT",
+  "author": {
+    "name": "Adam Wychowaniec",
+    "url": "https://github.com/adamwych"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adamwych/vastra-radiator-valve.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adamwych/vastra-radiator-valve/issues"
+  },
+  "keywords": [
+    "vastra",
+    "radiator",
+    "smart",
+    "iot"
+  ],
   "scripts": {
     "build": "tsc"
   },
