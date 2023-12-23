@@ -1,4 +1,5 @@
 import { IGattCentral } from "./bluetooth";
+import Logger from "./logger";
 import RadiatorValve from "./radiator-valve";
 
 export type RadiatorValvesOptions = {
@@ -8,7 +9,7 @@ export type RadiatorValvesOptions = {
   maxReadAttempts: number;
   readTimeout: number;
   maxWriteAttempts: number;
-  verbose: boolean;
+  logger?: Logger;
 };
 
 export default class RadiatorValves {
@@ -25,7 +26,7 @@ export default class RadiatorValves {
       maxReadAttempts: 5,
       readTimeout: 5000,
       maxWriteAttempts: 5,
-      verbose: true,
+      logger: new Logger(true),
       ...options,
     };
   }

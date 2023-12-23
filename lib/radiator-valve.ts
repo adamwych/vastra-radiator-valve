@@ -79,10 +79,11 @@ export default class RadiatorValve {
   private tx?: IGattCharacteristic;
 
   private lastSentWakeUpTime = 0;
+  private logger = this.options.logger;
 
   constructor(
     public readonly peripheral: IGattPeripheral,
-    private readonly options: RadiatorValvesOptions
+    private readonly options: Readonly<RadiatorValvesOptions>
   ) {}
 
   /**
@@ -99,7 +100,7 @@ export default class RadiatorValve {
       throw new Error(`Too many attempts trying to connect to ${this.peripheral.address}`);
     }
 
-    console.debug(
+    this.logger?.debug(
       `Connecting to ${this.peripheral.address} (timeout=${this.options.connectionTimeout}, attempt=${attempt})`
     );
 
@@ -108,11 +109,9 @@ export default class RadiatorValve {
     if (this.peripheral.state !== "connected") {
       await withTimeout(this.peripheral.connectAsync(), timeoutToken);
       if (timeoutToken.timedOut) {
-        console.warn(`Timed out connecting to ${this.peripheral.address}`);
+        this.logger?.warn(`Timed out connecting to ${this.peripheral.address}`);
         return this.connect(attempt + 1);
       }
-
-      console.debug(`Connected to ${this.peripheral.address}`);
     }
 
     // Find handles to the read/write service.
@@ -121,14 +120,12 @@ export default class RadiatorValve {
       timeoutToken
     );
     if (timeoutToken.timedOut) {
-      console.warn(`Timed out discovering services of ${this.peripheral.address}`);
+      this.logger?.warn(`Timed out discovering services of ${this.peripheral.address}`);
       return this.connect(attempt + 1);
     }
     if (services.length === 0) {
       throw new Error(`${this.peripheral.address} did not report a communication service`);
     }
-
-    console.debug(`Services discovered.`);
 
     // Find handles to read/write characteristics.
     const characteristics = await withTimeout(
@@ -136,14 +133,12 @@ export default class RadiatorValve {
       timeoutToken
     );
     if (timeoutToken.timedOut) {
-      console.warn(`Timed out discovering characteristics of ${this.peripheral.address}`);
+      this.logger?.warn(`Timed out discovering characteristics of ${this.peripheral.address}`);
       return this.connect(attempt + 1);
     }
     if (characteristics.length != 2) {
       throw new Error(`${this.peripheral.address} did not report read/write characteristics`);
     }
-
-    console.debug(`Characteristics discovered.`);
 
     [this.rx, this.tx] = characteristics;
 
@@ -151,12 +146,12 @@ export default class RadiatorValve {
     // Writing the value always times out, but somehow works fine on Raspberry.
     const descriptors = await withTimeout(this.rx.discoverDescriptorsAsync(), timeoutToken);
     if (timeoutToken.timedOut) {
-      console.warn(`Timed out discovering descriptors of ${this.peripheral.address}`);
+      this.logger?.warn(`Timed out discovering descriptors of ${this.peripheral.address}`);
       return this.connect(attempt + 1);
     }
     descriptors[0].writeValueAsync(Buffer.from([0x01, 0x00]));
 
-    console.debug(`Connection to ${this.peripheral.address} established`);
+    this.logger?.debug(`Connected to ${this.peripheral.address}`);
   }
 
   /**
@@ -164,7 +159,7 @@ export default class RadiatorValve {
    */
   public async disconnect() {
     await this.peripheral.disconnectAsync();
-    console.debug(`Closed connection to ${this.peripheral.address}`);
+    this.logger?.debug(`Closed connection to ${this.peripheral.address}`);
   }
 
   /**
@@ -175,9 +170,7 @@ export default class RadiatorValve {
    * @param data Data to write.
    */
   private write(data: Buffer) {
-    if (this.options.verbose) {
-      console.debug(`[Host -> ${this.peripheral.address}]`, data);
-    }
+    this.logger?.verbose(`[Host -> ${this.peripheral.address}]`, data);
     return this.tx?.writeAsync(data, false);
   }
 
@@ -203,9 +196,7 @@ export default class RadiatorValve {
 
       this.rx.notify(true);
       this.rx.on("data", (data) => {
-        if (this.options.verbose) {
-          console.debug(`[${this.peripheral.address} -> Host]`, data);
-        }
+        this.logger?.verbose(`[${this.peripheral.address} -> Host]`, data);
 
         responseChunks.push(data);
 
@@ -225,7 +216,7 @@ export default class RadiatorValve {
           this.rx.notify(false);
         }
 
-        console.warn(
+        this.logger?.warn(
           `Timed out reading response from ${this.peripheral.address} (attempt ${attempt})`
         );
         work(resolve, reject, attempt + 1);
@@ -287,7 +278,7 @@ export default class RadiatorValve {
 
       const response = await this.sendRequest(packet);
       if (response[2] !== PacketId.SaveSuccess) {
-        console.warn(
+        this.logger?.warn(
           `Unable to update configuration of ${this.peripheral.address} (offset=${position[0]}, data=${value}, attempt=${attempt})`
         );
         await work(attempt + 1);
