@@ -3,3 +3,4 @@ research.txt
 Justfile
 examples/test.ts
 node_modules/
+published/
