@@ -173,19 +173,22 @@ export default class RadiatorValve {
         }
       });
 
+      let timeoutId: NodeJS.Timeout;
+      if (this.options.readTimeout > 0) {
+        timeoutId = setTimeout(() => {
+          if (this.rx) {
+            this.rx.removeAllListeners("data");
+            this.rx.notify(false);
+          }
+
+          this.logger?.warn(
+            `Timed out reading response from ${this.peripheral.address} (attempt ${attempt})`
+          );
+          work(resolve, reject, attempt + 1);
+        }, this.options.readTimeout);
+      }
+
       await this.write(request);
-
-      const timeoutId = setTimeout(() => {
-        if (this.rx) {
-          this.rx.removeAllListeners("data");
-          this.rx.notify(false);
-        }
-
-        this.logger?.warn(
-          `Timed out reading response from ${this.peripheral.address} (attempt ${attempt})`
-        );
-        work(resolve, reject, attempt + 1);
-      }, this.options.readTimeout);
     };
 
     return new Promise<Buffer>(async (resolve, reject) => {

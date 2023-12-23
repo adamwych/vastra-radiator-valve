@@ -10,8 +10,7 @@ export function withTimeout<T>(promise: Promise<T>, token: TimeoutToken): Promis
       token.timedOut = true;
       resolve(null as any);
     }, token.timeout);
-    promise.then((value) => {
-      resolve(value);
+    promise.then(resolve).finally(() => {
       clearTimeout(id);
     });
   });
