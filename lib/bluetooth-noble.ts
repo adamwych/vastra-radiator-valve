@@ -3,17 +3,17 @@ import { IGattCentral, IGattPeripheral } from "./bluetooth";
 
 export default class NobleBluetoothCentral implements IGattCentral {
   public async startScanning(callback: (peripheral: IGattPeripheral) => void): Promise<void> {
-    await noble.startScanningAsync(["fff0"], false);
-
     noble.removeAllListeners("discover");
     noble.on("discover", async (peripheral) => {
       callback(peripheral satisfies IGattPeripheral);
     });
+
+    await noble.startScanningAsync(["fff0"], false);
   }
 
   public async stopScanning(): Promise<void> {
-    await noble.stopScanningAsync();
     noble.removeAllListeners("discover");
+    await noble.stopScanningAsync();
   }
 
   public static create(): Promise<NobleBluetoothCentral> {

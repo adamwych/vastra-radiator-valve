@@ -44,13 +44,13 @@ export default class RadiatorValves {
   public scanOnce(): Promise<RadiatorValve> {
     return new Promise((resolve) => {
       this.bluetooth.startScanning(async (peripheral) => {
-        this.bluetooth.stopScanning();
+        await this.bluetooth.stopScanning();
         resolve(new RadiatorValve(peripheral, this.options as RadiatorValvesOptions));
       });
     });
   }
 
-  public startScanning(callback: (valve: RadiatorValve) => void) {
+  public startScanning(callback: (valve: RadiatorValve) => Promise<void>) {
     this.bluetooth.startScanning(async (peripheral) => {
       if (this.discoveredValves.has(peripheral.address)) {
         return;
@@ -58,11 +58,11 @@ export default class RadiatorValves {
 
       // Temporarily stop scanning, because some adapters don't like
       // connecting and scanning simultaneously.
-      this.bluetooth.stopScanning();
+      await this.bluetooth.stopScanning();
 
       const valve = new RadiatorValve(peripheral, this.options as RadiatorValvesOptions);
       this.discoveredValves.set(peripheral.address, valve);
-      callback(valve);
+      await callback(valve);
 
       // Resume scanning.
       this.startScanning(callback);
