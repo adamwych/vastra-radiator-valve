@@ -1,4 +1,6 @@
 import BinaryWriter from "./binary-writer";
+import { MAX_STATE_WRITE_CHUNK } from "./constants";
+import { chunk } from "./utils";
 
 export enum PacketId {
   WakeUp = 235,
@@ -66,15 +68,18 @@ export function createStateReadPacket(offset: number, length: number = 48): Buff
   return writer.toBuffer();
 }
 
-export function createStateWritePacket(data: Buffer, offset: number): Buffer {
-  const writer = new BinaryWriter();
-  writer.writeUInt8(PacketId.StateChunk);
-  writer.writeUInt8(data.length + 4);
-  writer.writeUInt8(STATE_OP_WRITE);
-  writer.writeUInt16(offset);
-  writer.write([...data]);
-  writer.writeUInt8(calculateChecksum(writer.toBuffer()));
-  writer.writeUInt8(13);
-  writer.writeUInt8(10);
-  return writer.toBuffer();
+export function createStateWritePackets(data: Buffer, startOffset: number): Array<Buffer> {
+  return chunk([...data], MAX_STATE_WRITE_CHUNK).map((chunk, chunkIndex) => {
+    const relativeOffset = chunkIndex * MAX_STATE_WRITE_CHUNK;
+    const writer = new BinaryWriter();
+    writer.writeUInt8(PacketId.StateChunk);
+    writer.writeUInt8(chunk.length + 4);
+    writer.writeUInt8(STATE_OP_WRITE);
+    writer.writeUInt16(startOffset + relativeOffset);
+    writer.write([...chunk]);
+    writer.writeUInt8(calculateChecksum(writer.toBuffer()));
+    writer.writeUInt8(13);
+    writer.writeUInt8(10);
+    return writer.toBuffer();
+  });
 }

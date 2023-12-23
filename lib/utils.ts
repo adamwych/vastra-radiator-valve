@@ -20,3 +20,13 @@ export function withTimeout<T>(promise: Promise<T>, token: TimeoutToken): Promis
 export function sleepAsync(time: number) {
   return new Promise((resolve) => setTimeout(resolve, time));
 }
+
+export function chunk<T>(array: Array<T>, maxChunkSize: number): Array<Array<T>> {
+  const chunks = [];
+  const numberOfChunks = Math.ceil(array.length / maxChunkSize);
+  for (let chunkIndex = 0; chunkIndex < numberOfChunks; chunkIndex++) {
+    const relativeOffset = chunkIndex * maxChunkSize;
+    chunks.push(array.slice(relativeOffset, relativeOffset + maxChunkSize));
+  }
+  return chunks;
+}

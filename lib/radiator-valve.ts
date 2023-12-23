@@ -1,75 +1,33 @@
+import { IGattCharacteristic, IGattPeripheral } from "./bluetooth";
 import {
-  MAX_STATE_CHUNK_SIZE,
-  VALVE_STATE_LENGTH,
+  MAX_STATE_READ_CHUNK,
   VALVE_RX_UUID,
   VALVE_SERVICE_UUID,
+  VALVE_STATE_LENGTH,
   VALVE_TX_UUID,
 } from "./constants";
 import {
+  PACKET_HEADER_LENGTH,
   PacketId,
   RESPONSE_FOOTER_LENGTH,
-  PACKET_HEADER_LENGTH,
   createStateReadPacket,
-  createStateWritePacket,
+  createStateWritePackets,
   createWakeUpPacket,
 } from "./packets";
+import {
+  FIELD_BATTERY_VOLTAGE,
+  FIELD_CURRENT_TEMPERATURE,
+  FIELD_LOCKED,
+  FIELD_NAME,
+  FIELD_SERIAL_NUMBER,
+  FIELD_TARGET_TEMPERATURE,
+  FIELD_TEMPERATURE_DEVIATION,
+  StateFieldInfo,
+  decodeStateField,
+  encodeStateField,
+} from "./radiator-state";
 import { RadiatorValvesOptions } from "./radiator-valves";
 import { TimeoutToken, withTimeout } from "./utils";
-import { IGattCharacteristic, IGattPeripheral } from "./bluetooth";
-
-/**
- * Position of a field stored in valve's state buffer in [offset, length] format.
- */
-type StateFieldBufferPosition = [number, number];
-
-/**
- * Specifies the method used to encode/decode a field stored in valve's state buffer.
- */
-type StateFieldEncodingMethod =
-  | "direct"
-  | "battery-voltage"
-  | "byte-to-float-01"
-  | "byte-to-float-05"
-  | "short-to-float-01";
-
-function encodeStateField(value: any, method: StateFieldEncodingMethod) {
-  switch (method) {
-    case "direct":
-      return Buffer.from([value]);
-    case "byte-to-float-05":
-      return Buffer.from([(value / 0.5) & 255]);
-    default:
-      throw new Error("Unsupported field encoding method: " + method);
-  }
-}
-
-function decodeStateField(value: Buffer, method: StateFieldEncodingMethod) {
-  switch (method) {
-    case "direct":
-      return value[0];
-    case "battery-voltage":
-      return ((value[0] & 255) + 170) / 100;
-    case "byte-to-float-01":
-      return value[0] * 0.1;
-    case "byte-to-float-05":
-      return (value[0] & 255) * 0.5;
-    case "short-to-float-01":
-      return ((value[1] & 255) | (value[0] << 8)) * 0.1;
-    default:
-      throw new Error("Unsupported field encoding method: " + method);
-  }
-}
-
-/**
- * Position and encoding method of a field stored in valve's state buffer.
- */
-type StateFieldInfo = [StateFieldBufferPosition, StateFieldEncodingMethod];
-
-const FIELD_LOCKED: StateFieldInfo = [[5, 1], "direct"];
-const FIELD_BATTERY_VOLTAGE: StateFieldInfo = [[10, 1], "battery-voltage"];
-const FIELD_CURRENT_TEMPERATURE: StateFieldInfo = [[11, 2], "short-to-float-01"];
-const FIELD_TEMPERATURE_DEVIATION: StateFieldInfo = [[13, 1], "byte-to-float-01"];
-const FIELD_TARGET_TEMPERATURE: StateFieldInfo = [[16, 1], "byte-to-float-05"];
 
 export default class RadiatorValve {
   /** Characteristic used to read data from the device. */
@@ -80,6 +38,8 @@ export default class RadiatorValve {
 
   private lastSentWakeUpTime = 0;
   private logger = this.options.logger;
+
+  private serialNumber = "";
 
   constructor(
     public readonly peripheral: IGattPeripheral,
@@ -153,7 +113,10 @@ export default class RadiatorValve {
       descriptors[0].writeValueAsync(Buffer.from([0x01, 0x00]));
     }
 
-    this.logger?.debug(`Connected to ${this.peripheral.address}`);
+    await this.requestWakeUp();
+    this.serialNumber = await this.requestReadField(FIELD_SERIAL_NUMBER);
+
+    this.logger?.debug(`Connected to ${this.peripheral.address} (serial=${this.serialNumber})`);
   }
 
   /**
@@ -246,7 +209,7 @@ export default class RadiatorValve {
    * Requests value of a single field from peripheral's state buffer.
    * @returns Buffer containing the value.
    */
-  public async requestField(field: StateFieldInfo) {
+  public async requestReadField<T>(field: StateFieldInfo<T>): Promise<T> {
     const [position, encoding] = field;
     const packet = createStateReadPacket(position[0], position[1]);
     const response = await this.sendRequest(packet);
@@ -258,7 +221,7 @@ export default class RadiatorValve {
       response.length - RESPONSE_FOOTER_LENGTH
     );
 
-    return decodeStateField(encodedValue, encoding);
+    return decodeStateField(encodedValue, encoding) as T;
   }
 
   /**
@@ -267,9 +230,17 @@ export default class RadiatorValve {
    * @param field Field to update.
    * @param value New value.
    */
-  public async requestUpdateField(field: StateFieldInfo, value: any) {
-    const [position, encoding] = field;
-    const packet = createStateWritePacket(encodeStateField(value, encoding), position[0]);
+  public async requestWriteField<T>(field: StateFieldInfo<T>, value: T) {
+    const [[offset, length], encoding] = field;
+    const encodedValue = encodeStateField(value, encoding);
+    if (encodedValue.length > length) {
+      throw new Error(
+        `Overflow when writing field value. Expected at most ${length} bytes, got ${encodedValue.length}`
+      );
+    }
+
+    const paddedValue = Buffer.concat([encodedValue], length);
+    const packets = createStateWritePackets(paddedValue, offset);
 
     const work = async (attempt = 0) => {
       if (attempt >= this.options.maxWriteAttempts) {
@@ -278,11 +249,20 @@ export default class RadiatorValve {
         );
       }
 
-      const response = await this.sendRequest(packet);
-      if (response[2] !== PacketId.SaveSuccess) {
-        this.logger?.warn(
-          `Unable to update configuration of ${this.peripheral.address} (offset=${position[0]}, data=${value}, attempt=${attempt})`
-        );
+      let failed = false;
+      for (let packetIndex = 0; packetIndex < packets.length; packetIndex++) {
+        const packet = packets[packetIndex];
+        const response = await this.sendRequest(packet);
+        if (response[2] !== PacketId.SaveSuccess) {
+          this.logger?.warn(
+            `Unable to update configuration of ${this.peripheral.address} (offset=${offset}, packet=${packet}, packetIndex=${packetIndex}, attempt=${attempt})`
+          );
+          failed = true;
+          break;
+        }
+      }
+
+      if (failed) {
         await work(attempt + 1);
       }
     };
@@ -297,8 +277,8 @@ export default class RadiatorValve {
   public async requestStateSnapshot() {
     let buffer = Buffer.alloc(0);
 
-    for (let offset = 0; offset < VALVE_STATE_LENGTH; offset += MAX_STATE_CHUNK_SIZE) {
-      const packet = createStateReadPacket(offset, MAX_STATE_CHUNK_SIZE);
+    for (let offset = 0; offset < VALVE_STATE_LENGTH; offset += MAX_STATE_READ_CHUNK) {
+      const packet = createStateReadPacket(offset, MAX_STATE_READ_CHUNK);
       let response = await this.sendRequest(packet);
 
       // Skip header and checksum.
@@ -310,38 +290,56 @@ export default class RadiatorValve {
     return buffer;
   }
 
+  public async setName(name: string) {
+    if (name.length > 64) {
+      throw new Error(`Name can not be longer than 64 characters`);
+    }
+
+    await this.requestWakeUp();
+    await this.requestWriteField(FIELD_NAME, name);
+  }
+
+  public async getName() {
+    await this.requestWakeUp();
+    return this.requestReadField(FIELD_NAME);
+  }
+
+  public getSerialNumber() {
+    return this.serialNumber;
+  }
+
   public async setLocked(locked: boolean) {
     await this.requestWakeUp();
-    await this.requestUpdateField(FIELD_LOCKED, locked ? 1 : 0);
+    await this.requestWriteField(FIELD_LOCKED, locked ? 1 : 0);
   }
 
   public async getLocked() {
     await this.requestWakeUp();
-    return this.requestField(FIELD_LOCKED);
+    return this.requestReadField(FIELD_LOCKED);
   }
 
   public async getBatteryVoltage() {
     await this.requestWakeUp();
-    return this.requestField(FIELD_BATTERY_VOLTAGE);
+    return this.requestReadField(FIELD_BATTERY_VOLTAGE);
   }
 
   public async getTemperatureDeviation() {
     await this.requestWakeUp();
-    return this.requestField(FIELD_TEMPERATURE_DEVIATION);
+    return this.requestReadField(FIELD_TEMPERATURE_DEVIATION);
   }
 
   public async getCurrentTemperature() {
     await this.requestWakeUp();
-    return this.requestField(FIELD_CURRENT_TEMPERATURE);
+    return this.requestReadField(FIELD_CURRENT_TEMPERATURE);
   }
 
   public async setTargetTemperature(value: number) {
     await this.requestWakeUp();
-    await this.requestUpdateField(FIELD_TARGET_TEMPERATURE, value);
+    await this.requestWriteField(FIELD_TARGET_TEMPERATURE, value);
   }
 
   public async getTargetTemperature() {
     await this.requestWakeUp();
-    return this.requestField(FIELD_TARGET_TEMPERATURE);
+    return this.requestReadField(FIELD_TARGET_TEMPERATURE);
   }
 }
