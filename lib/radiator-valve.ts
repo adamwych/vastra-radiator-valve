@@ -149,7 +149,9 @@ export default class RadiatorValve {
       this.logger?.warn(`Timed out discovering descriptors of ${this.peripheral.address}`);
       return this.connect(attempt + 1);
     }
-    descriptors[0].writeValueAsync(Buffer.from([0x01, 0x00]));
+    if (this.options.raspberryFix) {
+      descriptors[0].writeValueAsync(Buffer.from([0x01, 0x00]));
+    }
 
     this.logger?.debug(`Connected to ${this.peripheral.address}`);
   }
