@@ -18,9 +18,12 @@ import {
   FIELD_BATTERY_VOLTAGE,
   FIELD_CURRENT_TEMPERATURE,
   FIELD_LOCKED,
+  FIELD_MODE,
   FIELD_NAME,
   FIELD_SERIAL_NUMBER,
-  FIELD_TARGET_TEMPERATURE,
+  FIELD_TARGET_TEMPERATURE_AUTO,
+  FIELD_TARGET_TEMPERATURE_MANUAL,
+  FIELD_TARGET_TEMPERATURE_SAVING,
   FIELD_TEMPERATURE_DEVIATION,
   StateFieldInfo,
   decodeStateField,
@@ -175,7 +178,7 @@ export default class RadiatorValve {
 
       let timeoutId: NodeJS.Timeout;
       if (this.options.readTimeout > 0) {
-        timeoutId = setTimeout(() => {
+        timeoutId = setTimeout(async () => {
           if (this.rx) {
             this.rx.removeAllListeners("data");
             this.rx.notify(false);
@@ -184,7 +187,12 @@ export default class RadiatorValve {
           this.logger?.warn(
             `Timed out reading response from ${this.peripheral.address} (attempt ${attempt})`
           );
-          work(resolve, reject, attempt + 1);
+
+          try {
+            await work(resolve, reject, attempt + 1);
+          } catch (error) {
+            reject(error);
+          }
         }, this.options.readTimeout);
       }
 
@@ -192,7 +200,11 @@ export default class RadiatorValve {
     };
 
     return new Promise<Buffer>(async (resolve, reject) => {
-      work(resolve, reject, 0);
+      try {
+        await work(resolve, reject, 0);
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
@@ -338,11 +350,28 @@ export default class RadiatorValve {
 
   public async setTargetTemperature(value: number) {
     await this.requestWakeUp();
-    await this.requestWriteField(FIELD_TARGET_TEMPERATURE, value);
+    await this.requestWriteField(await this.getTargetTemperatureField(), value);
+  }
+
+  private async getTargetTemperatureField() {
+    const mode = await this.getMode();
+    if (mode === 0) {
+      return FIELD_TARGET_TEMPERATURE_AUTO;
+    } else if (mode === 1) {
+      return FIELD_TARGET_TEMPERATURE_MANUAL;
+    } else if (mode === 2) {
+      return FIELD_TARGET_TEMPERATURE_SAVING;
+    }
+    throw new Error(`Unknown mode: ${mode}`);
   }
 
   public async getTargetTemperature() {
     await this.requestWakeUp();
-    return this.requestReadField(FIELD_TARGET_TEMPERATURE);
+    return this.requestReadField(await this.getTargetTemperatureField());
+  }
+
+  public async getMode() {
+    await this.requestWakeUp();
+    return this.requestReadField(FIELD_MODE);
   }
 }
