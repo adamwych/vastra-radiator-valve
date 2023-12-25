@@ -29,3 +29,15 @@ export function chunk<T>(array: Array<T>, maxChunkSize: number): Array<Array<T>>
   }
   return chunks;
 }
+
+// `abcdefgh` -> `ab:cd:ef:gh`
+export function uuidToAddress(uuid: string) {
+  let addr = "";
+  for (let i = 0; i < uuid.length; i++) {
+    addr += uuid[i] + uuid[++i];
+    if (i !== uuid.length - 1) {
+      addr += ":";
+    }
+  }
+  return addr;
+}

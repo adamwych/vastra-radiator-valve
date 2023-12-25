@@ -1,10 +1,15 @@
 import * as noble from "@abandonware/noble";
 import { IGattCentral, IGattPeripheral } from "./bluetooth";
+import { uuidToAddress } from "./utils";
 
 export default class NobleBluetoothCentral implements IGattCentral {
   public async startScanning(callback: (peripheral: IGattPeripheral) => void): Promise<void> {
     noble.removeAllListeners("discover");
     noble.on("discover", async (peripheral) => {
+      if (peripheral.address?.length === 0) {
+        peripheral.address = uuidToAddress(peripheral.uuid);
+      }
+
       callback(peripheral satisfies IGattPeripheral);
     });
 
