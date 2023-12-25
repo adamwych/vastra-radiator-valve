@@ -6,9 +6,9 @@ import {
   IGattService,
 } from "./bluetooth";
 import NobleBluetoothCentral from "./bluetooth-noble";
-import RadiatorValve from "./radiator-valve";
-import RadiatorValves from "./radiator-valves";
 import Logger from "./logger";
+import { RadiatorValveScanner } from "./scanner";
+import RadiatorValve from "./valve";
 
 export {
   IGattCentral,
@@ -16,8 +16,8 @@ export {
   IGattDescriptor,
   IGattPeripheral,
   IGattService,
+  Logger,
   NobleBluetoothCentral,
   RadiatorValve,
-  RadiatorValves,
-  Logger,
+  RadiatorValveScanner,
 };

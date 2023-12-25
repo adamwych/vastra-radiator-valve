@@ -1,17 +1,10 @@
 import NobleBluetoothCentral from "../lib/bluetooth-noble";
-import RadiatorValves from "../lib/radiator-valves";
+import { RadiatorValveScanner } from "../lib/scanner";
 
 NobleBluetoothCentral.create().then((bluetooth) => {
-  console.log("Looking for radiator valves...");
+  const scanner = new RadiatorValveScanner(bluetooth);
 
-  new RadiatorValves(bluetooth).startScanning(async (valve) => {
-    try {
-      await valve.connect();
-    } catch (error) {
-      console.error(error);
-      return;
-    }
-
+  scanner.on("connected", async (valve) => {
     try {
       console.log("isLocked", await valve.getLocked());
       console.log("batteryVoltage", await valve.getBatteryVoltage());
@@ -20,9 +13,7 @@ NobleBluetoothCentral.create().then((bluetooth) => {
     } catch (error) {
       console.error(error);
     }
-
-    await valve.disconnect();
-
-    process.exit(0);
   });
+
+  scanner.start();
 });

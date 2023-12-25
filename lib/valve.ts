@@ -13,7 +13,11 @@ import {
   createStateReadPacket,
   createStateWritePackets,
   createWakeUpPacket,
-} from "./packets";
+  decodeStateField,
+  encodeStateField,
+} from "./protocol";
+import { RadiatorValvesOptions } from "./scanner";
+import { TimeoutToken, withTimeout } from "./utils";
 import {
   FIELD_BATTERY_VOLTAGE,
   FIELD_CURRENT_TEMPERATURE,
@@ -26,11 +30,7 @@ import {
   FIELD_TARGET_TEMPERATURE_SAVING,
   FIELD_TEMPERATURE_DEVIATION,
   StateFieldInfo,
-  decodeStateField,
-  encodeStateField,
-} from "./radiator-state";
-import { RadiatorValvesOptions } from "./radiator-valves";
-import { TimeoutToken, withTimeout } from "./utils";
+} from "./valve-state";
 
 export default class RadiatorValve {
   /** Characteristic used to read data from the device. */
@@ -57,6 +57,8 @@ export default class RadiatorValve {
   public async connect(attempt: number = 0): Promise<void> {
     if (this.peripheral.state === "connected") {
       await this.peripheral.disconnectAsync();
+    } else if (this.peripheral.state === "connecting") {
+      throw new Error(`Already connecting to ${this.peripheral.address}`);
     }
 
     if (attempt >= this.options.maxConnectionAttempts) {
@@ -126,8 +128,10 @@ export default class RadiatorValve {
    * Closes connection with the peripheral.
    */
   public async disconnect() {
-    await this.peripheral.disconnectAsync();
-    this.logger?.debug(`Closed connection to ${this.peripheral.address}`);
+    if (this.peripheral.state !== "disconnected") {
+      await this.peripheral.disconnectAsync();
+      this.logger?.debug(`Closed connection to ${this.peripheral.address}`);
+    }
   }
 
   /**
@@ -307,7 +311,7 @@ export default class RadiatorValve {
 
   public async setName(name: string) {
     if (name.length > 64) {
-      throw new Error(`Name can not be longer than 64 characters`);
+      throw new Error("Name can not be longer than 64 characters");
     }
 
     await this.requestWakeUp();
@@ -348,7 +352,17 @@ export default class RadiatorValve {
     return this.requestReadField(FIELD_CURRENT_TEMPERATURE);
   }
 
+  /**
+   * Sets the target temperature.
+   * It takes up to 9 minutes for the valve to actually apply
+   * the update in case of this field.
+   *
+   * @param value New target temperature.
+   */
   public async setTargetTemperature(value: number) {
+    if (value < 0.5 || value > 29.5) {
+      throw new Error("Target temperature must be in [0.5-29.5] range");
+    }
     await this.requestWakeUp();
     await this.requestWriteField(await this.getTargetTemperatureField(), value);
   }

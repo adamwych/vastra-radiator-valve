@@ -1,10 +1,12 @@
 import NobleBluetoothCentral from "../lib/bluetooth-noble";
-import RadiatorValves from "../lib/radiator-valves";
+import { RadiatorValveScanner } from "../lib/scanner";
 
 NobleBluetoothCentral.create().then((bluetooth) => {
-  console.log("Looking for radiator valves...");
+  const scanner = new RadiatorValveScanner(bluetooth);
 
-  new RadiatorValves(bluetooth).startScanning(async (valve) => {
+  scanner.on("connected", (valve) => {
     console.log(`Found a radiator valve @ ${valve.peripheral.address}`);
   });
+
+  scanner.start();
 });

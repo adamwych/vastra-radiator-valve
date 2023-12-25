@@ -1,6 +1,7 @@
 import BinaryWriter from "./binary-writer";
 import { MAX_STATE_WRITE_CHUNK } from "./constants";
 import { chunk } from "./utils";
+import { StateFieldEncodingMethod } from "./valve-state";
 
 export enum PacketId {
   WakeUp = 235,
@@ -37,6 +38,45 @@ function calculateChecksum(buffer: Buffer) {
     value = CRC8_MAXIM_TABLE[(value ^ buffer[i]) & 255];
   }
   return value;
+}
+
+export function encodeStateField(value: any, method: StateFieldEncodingMethod) {
+  if (value instanceof Buffer) {
+    return value;
+  }
+
+  switch (method) {
+    case "direct":
+      return Buffer.from(Array.isArray(value) ? value : [value]);
+    case "byte-to-float-05":
+      return Buffer.from([(value / 0.5) & 255]);
+    case "string":
+    case "hex-string":
+      return Buffer.from(value);
+    default:
+      throw new Error("Unsupported field encoding: " + method);
+  }
+}
+
+export function decodeStateField(value: Buffer, method: StateFieldEncodingMethod) {
+  switch (method) {
+    case "direct":
+      return value.length === 1 ? value[0] : value;
+    case "battery-voltage":
+      return ((value[0] & 255) + 170) / 100;
+    case "byte-to-float-01":
+      return value[0] * 0.1;
+    case "byte-to-float-05":
+      return (value[0] & 255) * 0.5;
+    case "short-to-float-01":
+      return ((value[1] & 255) | (value[0] << 8)) * 0.1;
+    case "string":
+      return value.toString("utf8");
+    case "hex-string":
+      return [...value].map((x) => x.toString(16)).join("");
+    default:
+      throw new Error("Unsupported field encoding: " + method);
+  }
 }
 
 // General packet structure:
