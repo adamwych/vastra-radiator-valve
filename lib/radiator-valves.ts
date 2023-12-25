@@ -10,6 +10,7 @@ export type RadiatorValvesOptions = {
   readTimeout: number;
   maxWriteAttempts: number;
   logger?: Logger;
+  verbose?: boolean;
   raspberryFix: boolean;
 };
 
@@ -27,7 +28,7 @@ export default class RadiatorValves {
       maxReadAttempts: 5,
       readTimeout: 5000,
       maxWriteAttempts: 5,
-      logger: new Logger(true),
+      logger: new Logger(options.verbose ?? true),
       raspberryFix: false,
       ...options,
     };
