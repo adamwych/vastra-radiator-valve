@@ -42,8 +42,6 @@ export default class RadiatorValve {
   private lastSentWakeUpTime = 0;
   private logger = this.options.logger;
 
-  private serialNumber = "";
-
   constructor(
     public readonly peripheral: IGattPeripheral,
     private readonly options: Readonly<RadiatorValvesOptions>
@@ -118,10 +116,7 @@ export default class RadiatorValve {
       descriptors[0].writeValueAsync(Buffer.from([0x01, 0x00]));
     }
 
-    await this.requestWakeUp();
-    this.serialNumber = await this.requestReadField(FIELD_SERIAL_NUMBER);
-
-    this.logger?.debug(`Connected to ${this.peripheral.address} (serial=${this.serialNumber})`);
+    this.logger?.debug(`Connected to ${this.peripheral.address}`);
   }
 
   /**
@@ -323,8 +318,9 @@ export default class RadiatorValve {
     return this.requestReadField(FIELD_NAME);
   }
 
-  public getSerialNumber() {
-    return this.serialNumber;
+  public async getSerialNumber() {
+    await this.requestWakeUp();
+    return this.requestReadField(FIELD_SERIAL_NUMBER);
   }
 
   public async setLocked(locked: boolean) {
